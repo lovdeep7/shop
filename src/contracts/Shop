@@ -1,0 +1,185 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.17;
+
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+contract Shop is ReentrancyGuard {
+    // State Variables
+    address public owner;
+    uint256 public productCount = 0;
+
+    constructor() {
+        owner = msg.sender;
+    }
+
+    // Product Structure
+    struct Product {
+        uint256 id;
+        address payable seller;
+        string name;
+        string description;
+        uint256 price; // Price in wei
+        uint256 quantity;
+        bool isAvailable;
+    }
+
+    // Mappings
+    mapping(uint256 => Product) public products;
+
+    // Events
+    event ProductAdded(uint256 indexed productId, address indexed seller);
+    event ProductPurchased(
+        uint256 indexed productId,
+        address indexed buyer,
+        uint256 quantity
+    );
+    event ProductUpdated(uint256 indexed productId);
+
+    // Modifiers
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not contract owner");
+        _;
+    }
+
+    modifier onlySeller(uint256 _productId) {
+        require(
+            products[_productId].seller == msg.sender,
+            "Not the product seller"
+        );
+        _;
+    }
+
+    modifier productExists(uint256 _productId) {
+        require(
+            _productId < productCount,
+            "Product does not exist"
+        );
+        _;
+    }
+
+    modifier isAvailable(uint256 _productId) {
+        require(
+            products[_productId].isAvailable,
+            "Product not available"
+        );
+        _;
+    }
+
+    // Functions
+
+    /// @notice Adds a new product to the marketplace
+    /// @param _name Name of the product
+    /// @param _description Description of the product
+    /// @param _price Price of the product in wei
+    /// @param _quantity Quantity available
+    function addProduct(
+        string memory _name,
+        string memory _description,
+        uint256 _price,
+        uint256 _quantity
+    ) public {
+        require(_price > 0, "Price must be greater than zero");
+        require(_quantity > 0, "Quantity must be greater than zero");
+
+        products[productCount] = Product({
+            id: productCount,
+            seller: payable(msg.sender),
+            name: _name,
+            description: _description,
+            price: _price,
+            quantity: _quantity,
+            isAvailable: true
+        });
+
+        emit ProductAdded(productCount, msg.sender);
+        productCount++;
+    }
+
+    /// @notice Purchases a product from the marketplace
+    /// @param _productId ID of the product
+    /// @param _quantity Quantity to purchase
+    function buyProduct(uint256 _productId, uint256 _quantity)
+        public
+        payable
+        nonReentrant
+        productExists(_productId)
+        isAvailable(_productId)
+    {
+        Product storage product = products[_productId];
+
+        require(_quantity > 0, "Quantity must be greater than zero");
+        require(
+            product.quantity >= _quantity,
+            "Not enough quantity available"
+        );
+
+        uint256 totalPrice = product.price * _quantity;
+        require(msg.value >= totalPrice, "Insufficient payment");
+
+        // Update product quantity
+        product.quantity -= _quantity;
+
+        // If quantity is zero, mark product as unavailable
+        if (product.quantity == 0) {
+            product.isAvailable = false;
+        }
+
+        // Transfer funds to the seller
+        (bool sent, ) = product.seller.call{value: totalPrice}("");
+        require(sent, "Failed to send Ether");
+
+        // Refund any excess payment
+        if (msg.value > totalPrice) {
+            (bool refundSent, ) = msg.sender.call{
+                value: msg.value - totalPrice
+            }("");
+            require(refundSent, "Failed to refund excess Ether");
+        }
+
+        emit ProductPurchased(_productId, msg.sender, _quantity);
+    }
+
+    /// @notice Updates an existing product's details
+    /// @param _productId ID of the product
+    /// @param _name New name of the product
+    /// @param _description New description of the product
+    /// @param _price New price of the product in wei
+    /// @param _quantity New quantity available
+    /// @param _isAvailable Availability status of the product
+    function updateProduct(
+        uint256 _productId,
+        string memory _name,
+        string memory _description,
+        uint256 _price,
+        uint256 _quantity,
+        bool _isAvailable
+    )
+        public
+        onlySeller(_productId)
+        productExists(_productId)
+    {
+        Product storage product = products[_productId];
+
+        require(_price > 0, "Price must be greater than zero");
+
+        product.name = _name;
+        product.description = _description;
+        product.price = _price;
+        product.quantity = _quantity;
+        product.isAvailable = _isAvailable;
+
+        emit ProductUpdated(_productId);
+    }
+
+    /// @notice Fetches product details
+    /// @param _productId ID of the product
+    /// @return Product details
+    function getProduct(uint256 _productId)
+        public
+        view
+        productExists(_productId)
+        returns (Product memory)
+    {
+        return products[_productId];
+    }
+}
