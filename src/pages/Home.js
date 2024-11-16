@@ -1,13 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
+import ProductList from '../components/ProductList';
+import Recommendations from '../components/Recommendations';
 
 const Home = () => {
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+
+    setProducts([
+      // ... product data
+    ]);
+  }, []);
+
   return (
     <>
       <Navbar />
       <div style={{ padding: '20px' }}>
-        <h1>Welcome to Shop</h1>
-        <p>A decentralized shopping platform.</p>
+        <Recommendations products={products} />
+        <ProductList products={products} />
       </div>
     </>
   );
